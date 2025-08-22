@@ -13,7 +13,7 @@ services:
       TZ: ${TZ}
 
     ports:
-      - "5432:5432"
+      - "5432:${POSTGRES_PORT}"
 
     volumes:
       - postgres_data:/var/lib/postgresql/data
