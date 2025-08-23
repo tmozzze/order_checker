@@ -15,4 +15,15 @@ type DB struct {
 func NewDB(ctx context.Context, cfg *config.Config) (*DB, error) {
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s", cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName)
 
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	//пингуем для проверки
+	if err := pool.Ping(ctx); err != nil {
+		return nil, err
+	}
+
+	return &DB{Pool: pool}, nil
 }
