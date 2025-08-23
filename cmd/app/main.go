@@ -1,11 +1,12 @@
 package main
 
 import (
-	"L0/internal/config"
-	"L0/internal/db"
 	"context"
 	"fmt"
 	"log"
+
+	"github.com/tmozzze/order_checker/internal/config"
+	"github.com/tmozzze/order_checker/internal/db"
 )
 
 func main() {
