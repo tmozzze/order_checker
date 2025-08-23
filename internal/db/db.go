@@ -17,12 +17,12 @@ func NewDB(ctx context.Context, cfg *config.Config) (*DB, error) {
 
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to connect to Postgres: %w", err)
 	}
 
 	//пингуем для проверки
 	if err := pool.Ping(ctx); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to ping Postgres: %w", err)
 	}
 
 	return &DB{Pool: pool}, nil

@@ -9,14 +9,20 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal("Config error:", err)
+	}
 
 	ctx := context.Background()
 
-	_, err := db.NewDB(ctx, cfg)
+	database, err := db.NewDB(ctx, cfg)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Postgres init failed:", err)
 	}
-	fmt.Printf("Connected to Postgres on port %s\n", cfg.DBPort)
+	defer database.Pool.Close()
+
+	log.Println("Connected to Postgres on port", cfg.DBPort)
+	fmt.Println(database)
 
 }

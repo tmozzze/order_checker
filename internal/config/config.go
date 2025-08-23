@@ -1,8 +1,8 @@
 package config
 
 import (
+	"errors"
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -16,7 +16,7 @@ type Config struct {
 	DBName     string
 }
 
-func Load() *Config {
+func Load() (*Config, error) {
 
 	if err := godotenv.Load(); err != nil {
 		fmt.Println(".env not found. Skip")
@@ -31,8 +31,9 @@ func Load() *Config {
 	}
 
 	if cfg.DBUser == "" || cfg.DBPassword == "" {
-		log.Fatal("Config error: DB_USER or DB_PASSWORD is empty")
+		err := errors.New("DB_USER or DB_PASSWORD is empty")
+		return nil, err
 	}
 
-	return cfg
+	return cfg, nil
 }
