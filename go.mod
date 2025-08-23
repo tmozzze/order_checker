@@ -1,4 +1,4 @@
-module L0
+module github.com/tmozzze/order_checker
 
 go 1.24.4
 

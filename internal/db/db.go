@@ -1,9 +1,10 @@
 package db
 
 import (
-	"L0/internal/config"
 	"context"
 	"fmt"
+
+	"github.com/tmozzze/order_checker/internal/config"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
