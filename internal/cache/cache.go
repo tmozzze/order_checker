@@ -1,9 +1,10 @@
 package cache
 
 import (
-	"L0/internal/models"
 	"errors"
 	"sync"
+
+	"github.com/tmozzze/order_checker/internal/models"
 )
 
 type Cache struct {
