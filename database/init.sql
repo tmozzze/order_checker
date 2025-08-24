@@ -15,7 +15,7 @@ CREATE TABLE orders (
 );
 
 CREATE TABLE deliveries (
-    id SERIAL PRIMARY KEY NOT NULL,
+    id SERIAL PRIMARY KEY,
     order_uid TEXT REFERENCES orders(order_uid),
     name TEXT,
     phone TEXT,
@@ -27,7 +27,7 @@ CREATE TABLE deliveries (
 );
 
 CREATE TABLE payments (
-    id SERIAL PRIMARY KEY NOT NULL,
+    id SERIAL PRIMARY KEY,
     order_uid TEXT REFERENCES orders(order_uid),
     transaction TEXT,
     request_id TEXT,
@@ -42,7 +42,7 @@ CREATE TABLE payments (
 );
 
 CREATE TABLE items (
-    id SERIAL PRIMARY KEY NOT NULL,
+    id SERIAL PRIMARY KEY,
     order_uid TEXT REFERENCES orders(order_uid),
     chrt_id INT,
     track_number TEXT,

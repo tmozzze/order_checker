@@ -15,10 +15,11 @@ func NewOrderRepository(pool *pgxpool.Pool) *OrderRepository {
 	return &OrderRepository{pool: pool}
 }
 
+// Getting Order struct from Postgres by order ID
 func (r *OrderRepository) GetOrderById(ctx context.Context, orderID string) (*models.Order, error) {
 	// Get order
 	query := `
-		SELECT order_uid, track_number, enrty, locale, internal_signature, customer_id,
+		SELECT order_uid, track_number, entry, locale, internal_signature, customer_id,  
 			delivery_service, shardkey, sm_id, date_created, oof_shard
 		FROM orders WHERE order_uid = $1
 	`
@@ -39,7 +40,7 @@ func (r *OrderRepository) GetOrderById(ctx context.Context, orderID string) (*mo
 
 	deliveryQuery := `
 		SELECT name, phone, zip, city, address, region, email
-		FROM delivery WHERE order_uid = $1
+		FROM deliveries WHERE order_uid = $1
 	`
 	row = r.pool.QueryRow(ctx, deliveryQuery, orderID)
 
@@ -54,7 +55,7 @@ func (r *OrderRepository) GetOrderById(ctx context.Context, orderID string) (*mo
 
 	// Get Payment
 	paymentDelivery := `
-		SELECT transaction, request_id, currency, provider, amount,
+		SELECT transaction, request_id, currency, provider, amount, 
 			payment_dt, bank, delivery_cost, goods_total, custom_fee
 		FROM payments WHERE order_uid = $1
 	`
@@ -74,7 +75,7 @@ func (r *OrderRepository) GetOrderById(ctx context.Context, orderID string) (*mo
 
 	// Get Items
 	queryItems := `
-		SELECT chrt_id, track_number, price, rid, name, sale, size,
+		SELECT chrt_id, track_number, price, rid, name, sale, size, 
 			total_price, nm_id, brand, status
 		FROM items WHERE order_uid = $1
 	`
@@ -89,8 +90,8 @@ func (r *OrderRepository) GetOrderById(ctx context.Context, orderID string) (*mo
 		var item models.Item
 
 		err := rows.Scan(&item.ChrtID, &item.TrackNumber, &item.Price, &item.RID,
-			&item.Name, &item.Sale, &item.Size, &item.TotalPrice, &item.NmID, &item.Brand,
-			&item.Status,
+			&item.Name, &item.Sale, &item.Size, &item.TotalPrice, &item.NmID,
+			&item.Brand, &item.Status,
 		)
 		if err != nil {
 			return nil, err
@@ -102,4 +103,71 @@ func (r *OrderRepository) GetOrderById(ctx context.Context, orderID string) (*mo
 
 	return &o, nil
 
+}
+
+func (r *OrderRepository) SaveOrder(ctx context.Context, o *models.Order) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// Insert Order
+	_, err = tx.Exec(ctx, `
+		INSERT INTO orders (order_uid, track_number, entry, locale, internal_signature, 
+							customer_id, delivery_service, shardkey, sm_id,
+							date_created, oof_shard)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+		`,
+		o.OrderUID, o.TrackNumber, o.Entry, o.Locale, o.InternalSignature, o.CustomerID,
+		o.DeliveryService, o.ShardKey, o.SmID, o.DateCreated, o.OofShard,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Insert Delivery
+	_, err = tx.Exec(ctx, `
+		INSERT INTO deliveries (order_uid, name, phone, zip, city, address, region, 
+								email)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+	`,
+		o.OrderUID, o.Delivery.Name, o.Delivery.Phone, o.Delivery.Zip, o.Delivery.City,
+		o.Delivery.Address, o.Delivery.Region, o.Delivery.Email,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Insert Payments
+	_, err = tx.Exec(ctx, `
+		INSERT INTO payments (order_uid, transaction, request_id, currency, provider, 
+							  amount, payment_dt, bank, delivery_cost, goods_total, 
+							  custom_fee)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+	`,
+		o.OrderUID, o.Payment.Transaction, o.Payment.RequestID, o.Payment.Currency,
+		o.Payment.Provider, o.Payment.Amount, o.Payment.PaymentDt, o.Payment.Bank,
+		o.Payment.DeliveryCost, o.Payment.GoodsTotal, o.Payment.CustomFee,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Insert Items
+	for _, item := range o.Items {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO items (order_uid, chrt_id, track_number, price, rid, name, 
+							  	  sale, size, total_price, nm_id, brand, status)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		`,
+			o.OrderUID, item.ChrtID, item.TrackNumber, item.Price, item.RID, item.Name,
+			item.Sale, item.Size, item.TotalPrice, item.NmID, item.Brand, item.Status,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
 }
