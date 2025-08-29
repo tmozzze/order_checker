@@ -21,7 +21,7 @@ func NewDB(ctx context.Context, cfg *config.Config) (*DB, error) {
 		return nil, fmt.Errorf("failed to connect to Postgres: %w", err)
 	}
 
-	//пингуем для проверки
+	// Ping
 	if err := pool.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("failed to ping Postgres: %w", err)
 	}
