@@ -80,8 +80,17 @@ func main() {
 	svc := service.NewOrderService(repo, c, writer)
 	h := api.NewOrderHandler(svc)
 
-	// Routes
+	// Router
 	r := chi.NewRouter()
+
+	// Frontend
+	fs := http.FileServer(http.Dir("./web"))
+	r.Handle("/static/*", http.StripPrefix("/static/", fs))
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "./web/index.html")
+	})
+
+	// API
 	h.RegisterRoutes(r)
 
 	// Start HTTP Server on :8080
