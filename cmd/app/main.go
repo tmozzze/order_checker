@@ -5,18 +5,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/segmentio/kafka-go"
+	"github.com/tmozzze/order_checker/internal/api"
 	"github.com/tmozzze/order_checker/internal/cache"
 	"github.com/tmozzze/order_checker/internal/config"
 	"github.com/tmozzze/order_checker/internal/db"
 	"github.com/tmozzze/order_checker/internal/kafka_consumer"
 	"github.com/tmozzze/order_checker/internal/models"
 	"github.com/tmozzze/order_checker/internal/repository"
+	"github.com/tmozzze/order_checker/internal/service"
 )
 
 func main() {
+	// Config
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatal("Config error:", err)
@@ -24,6 +29,7 @@ func main() {
 
 	ctx := context.Background()
 
+	// Postgres
 	database, err := db.NewDB(ctx, cfg)
 	if err != nil {
 		log.Fatal("Postgres init failed:", err)
@@ -31,16 +37,27 @@ func main() {
 	defer database.Pool.Close()
 
 	log.Println("Connected to Postgres on port", cfg.DBPort)
-	fmt.Println(database)
 
+	// Repositories and cache
 	repo := repository.NewOrderRepository(database.Pool)
 	c := cache.New()
 
+	// Kafka
 	broker := "localhost:9092"
 	topic := "orders"
+
 	if err := kafka_consumer.EnsureTopic(broker, topic, 1, 1); err != nil {
 		log.Fatal("failed to ensure topic:", err)
 	}
+
+	processedC := make(chan string)
+
+	// Producer | Writer
+	writer := kafka.NewWriter(kafka.WriterConfig{
+		Brokers: []string{broker},
+		Topic:   topic,
+	})
+	defer writer.Close()
 
 	// Consumer
 	consumer := kafka_consumer.NewConsumer(
@@ -49,26 +66,49 @@ func main() {
 		"test-group",
 		repo,
 		c,
+		processedC,
 	)
-
+	// Consumer in background
 	go func() {
+		log.Println("Starting kafka consumer...")
 		if err := consumer.Start(ctx); err != nil {
 			log.Fatal("consumer failed:", err)
 		}
 	}()
 
-	// Producer
-	writer := kafka.NewWriter(kafka.WriterConfig{
-		Brokers: []string{"localhost:9092"},
-		Topic:   "orders",
-	})
-	defer writer.Close()
+	// Service + Handlers
+	svc := service.NewOrderService(repo, c, writer)
+	h := api.NewOrderHandler(svc)
 
-	TestOrderSaveAndGet(ctx, repo, c, writer)
+	// Routes
+	r := chi.NewRouter()
+	h.RegisterRoutes(r)
+
+	// Start HTTP Server on :8080
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: r,
+	}
+
+	go func() {
+		log.Println("HTTP server started on :8080")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal("server failed:", err)
+		}
+	}()
+
+	// Logs orders from consumer
+	go func() {
+		for orderUID := range processedC {
+			log.Printf("Order proccesed: %s", orderUID)
+		}
+	}()
+
+	select {} // Wait forever
 
 }
 
-func TestOrderSaveAndGet(ctx context.Context, repo *repository.OrderRepository, c *cache.Cache, writer *kafka.Writer) {
+func TestOrderSaveAndGet(ctx context.Context, repo *repository.OrderRepository, c *cache.Cache, writer *kafka.Writer, processedC chan string) {
 	order := &models.Order{
 		OrderUID:    "125",
 		TrackNumber: "125",
@@ -115,7 +155,12 @@ func TestOrderSaveAndGet(ctx context.Context, repo *repository.OrderRepository, 
 	}
 	fmt.Println("Sent test order to Kafka")
 
-	time.Sleep(10 * time.Second)
+	select {
+	case <-ctx.Done():
+		log.Fatal("context canceled before consumer processed")
+	case uid := <-processedC:
+		fmt.Println("Consumer processed order:", uid)
+	}
 
 	got, err := repo.GetOrderById(ctx, order.OrderUID)
 	if err != nil {
@@ -133,12 +178,114 @@ func TestOrderSaveAndGet(ctx context.Context, repo *repository.OrderRepository, 
 
 }
 
-//Create topics for kafka
+/*
+curl -X POST http://localhost:8080/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "order_uid": "o-778",
+    "track_number": "TN-778",
+    "entry": "WBIL",
+    "locale": "en",
+    "customer_id": "user-124",
+    "delivery": {
+      "name": "Test User",
+      "phone": "+9720000000",
+      "city": "Tel Aviv",
+      "address": "Some Street 1",
+      "email": "user@test.com"
+    },
+    "payment": {
+      "transaction": "trx-778",
+      "currency": "USD",
+      "provider": "visa",
+      "amount": 100,
+      "payment_dt": 1637907727,
+      "bank": "alpha",
+      "delivery_cost": 10,
+      "goods_total": 90
+    },
+    "items": [
+      {
+        "chrt_id": 2,
+        "track_number": "TN-778",
+        "price": 100,
+        "rid": "some-rid",
+        "name": "Book",
+        "sale": 0,
+        "total_price": 100,
+        "nm_id": 11,
+        "brand": "NoName",
+        "status": 200
+      }
+    ]
+  }'
 
-//docker exec -it <kafka-container-id> kafka-topics.sh \ --create \ --topic orders \ --partitions 1 \ --replication-factor 1 \ --bootstrap-server localhost:9092
+*/
 
 /*
-docker exec -it <kafka-container-id> kafka-topics.sh \
-  --list \
-  --bootstrap-server localhost:9092
+curl http://localhost:8080/orders/o-778
+*/
+
+/*
+curl -X POST http://localhost:8080/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "order_uid": "o-999",
+    "track_number": "TN-999",
+    "entry": "WBIL",
+    "locale": "en",
+    "customer_id": "user-999",
+    "delivery": {
+      "name": "Alice Example",
+      "phone": "+9721111111",
+      "city": "Haifa",
+      "address": "Somewhere 42",
+      "email": "alice@example.com"
+    },
+    "payment": {
+      "transaction": "trx-999",
+      "currency": "USD",
+      "provider": "mastercard",
+      "amount": 250,
+      "payment_dt": 1637908888,
+      "bank": "hapoalim",
+      "delivery_cost": 15,
+      "goods_total": 235,
+      "custom_fee": 0
+    },
+    "items": [
+      {
+        "chrt_id": 999,
+        "track_number": "TN-999",
+        "price": 120,
+        "rid": "rid-999a",
+        "name": "Golang Book",
+        "sale": 0,
+        "size": "M",
+        "total_price": 120,
+        "nm_id": 9991,
+        "brand": "TechPress",
+        "status": 201
+      },
+      {
+        "chrt_id": 1000,
+        "track_number": "TN-999",
+        "price": 115,
+        "rid": "rid-999b",
+        "name": "Kafka Guide",
+        "sale": 0,
+        "size": "L",
+        "total_price": 115,
+        "nm_id": 9992,
+        "brand": "StreamBooks",
+        "status": 201
+      }
+    ]
+  }'
+
+*/
+
+/*
+curl http://localhost:8080/orders/o-999
+
 */
