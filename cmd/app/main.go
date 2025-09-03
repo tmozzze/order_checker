@@ -2,11 +2,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/segmentio/kafka-go"
@@ -15,7 +12,6 @@ import (
 	"github.com/tmozzze/order_checker/internal/config"
 	"github.com/tmozzze/order_checker/internal/db"
 	"github.com/tmozzze/order_checker/internal/kafka_consumer"
-	"github.com/tmozzze/order_checker/internal/models"
 	"github.com/tmozzze/order_checker/internal/repository"
 	"github.com/tmozzze/order_checker/internal/service"
 )
@@ -38,9 +34,11 @@ func main() {
 
 	log.Println("Connected to Postgres on port", cfg.DBPort)
 
-	// Repositories and cache
+	// Repositories and cache(capacity: 100)
 	repo := repository.NewOrderRepository(database.Pool)
-	c := cache.New()
+
+	log.Println("Start preloading data in cache...")
+	c := cache.New(100)
 
 	// Kafka
 	broker := "localhost:9092"
@@ -85,10 +83,7 @@ func main() {
 
 	// Frontend
 	fs := http.FileServer(http.Dir("./web"))
-	r.Handle("/static/*", http.StripPrefix("/static/", fs))
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "./web/index.html")
-	})
+	r.Handle("/*", fs)
 
 	// API
 	h.RegisterRoutes(r)
@@ -99,6 +94,7 @@ func main() {
 		Handler: r,
 	}
 
+	log.Println("Starting HTTP server...")
 	go func() {
 		log.Println("HTTP server started on :8080")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -114,77 +110,6 @@ func main() {
 	}()
 
 	select {} // Wait forever
-
-}
-
-func TestOrderSaveAndGet(ctx context.Context, repo *repository.OrderRepository, c *cache.Cache, writer *kafka.Writer, processedC chan string) {
-	order := &models.Order{
-		OrderUID:    "125",
-		TrackNumber: "125",
-		Entry:       "WBIL",
-		Locale:      "en",
-		CustomerID:  "test",
-		DateCreated: time.Now(),
-		Delivery: models.Delivery{
-			Name:    "Test Testov",
-			Phone:   "+9720000000",
-			City:    "Kiryat Mozkin",
-			Address: "Ploshad Mira 15",
-			Email:   "test@gmail.com",
-		},
-		Payment: models.Payment{
-			Transaction:  "125",
-			Currency:     "USD",
-			Provider:     "wbpay",
-			Amount:       1817,
-			PaymentDt:    1637907727,
-			Bank:         "alpha",
-			DeliveryCost: 1500,
-			GoodsTotal:   317,
-		},
-		Items: []models.Item{
-			{
-				ChrtID:      125,
-				TrackNumber: "125",
-				Price:       453,
-				RID:         "ab4219087a764ae0btest",
-				Name:        "Mascaras",
-				Sale:        30,
-				TotalPrice:  317,
-				NmID:        125,
-				Brand:       "Vivienne Sabo",
-				Status:      202,
-			},
-		},
-	}
-
-	payload, _ := json.Marshal(order)
-	if err := writer.WriteMessages(ctx, kafka.Message{Value: payload}); err != nil {
-		log.Fatal("producer failed:", err)
-	}
-	fmt.Println("Sent test order to Kafka")
-
-	select {
-	case <-ctx.Done():
-		log.Fatal("context canceled before consumer processed")
-	case uid := <-processedC:
-		fmt.Println("Consumer processed order:", uid)
-	}
-
-	got, err := repo.GetOrderById(ctx, order.OrderUID)
-	if err != nil {
-		log.Fatal("failed to get order from db:", err)
-	}
-	fmt.Println("Got oreder from Postgres:", got.OrderUID)
-
-	if cached, ok := c.Get(order.OrderUID); ok {
-		fmt.Println("Order found in cache:", cached.OrderUID)
-	} else {
-		fmt.Println("Order not found in cache:", order.OrderUID)
-	}
-
-	fmt.Println("Order:\n", order)
-
 }
 
 /*

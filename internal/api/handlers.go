@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -49,18 +50,22 @@ func (h *OrderHandler) SaveOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := order.Validate(); err != nil {
+		http.Error(w, "invalid order: "+err.Error(), http.StatusBadRequest)
+		log.Printf("Validation failed: %v", err)
+		return
+	}
+
 	// Service layer
 	ctx := r.Context()
 	if err := h.service.SaveOrder(ctx, &order); err != nil {
 		http.Error(w, "failed to save order", http.StatusInternalServerError)
+		log.Printf("Postgres error: %v", err)
 		return
 	}
 
 	// Success
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(map[string]string{
-		"message":   "order saved successfully",
-		"order_uid": order.OrderUID,
-	})
+	log.Printf("Order %s saved", order.OrderUID)
 }

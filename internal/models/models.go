@@ -48,10 +48,17 @@ type Order struct {
 	Items             []Item    `json:"items"`
 	Locale            string    `json:"locale"`
 	InternalSignature string    `json:"internal_signature"`
-	CustomerID        string    `json:"custumer_id"`
+	CustomerID        string    `json:"customer_id"`
 	DeliveryService   string    `json:"delivery_service"`
 	ShardKey          string    `json:"shardkey"`
 	SmID              int       `json:"sm_id"`
 	DateCreated       time.Time `json:"date_created"`
 	OofShard          string    `json:"oof_shard"`
+}
+
+func (i *Item) CalculateTotalPrice() int {
+	if i.Sale == 0 {
+		return i.Price
+	}
+	return i.Price * (100 - i.Sale) / 100
 }

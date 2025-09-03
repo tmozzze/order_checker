@@ -171,3 +171,115 @@ func (r *OrderRepository) SaveOrder(ctx context.Context, o *models.Order) error 
 
 	return tx.Commit(ctx)
 }
+
+func (r *OrderRepository) GetAllOrders(ctx context.Context) ([]models.Order, error) {
+	// Order
+	query := `
+			SELECT order_uid, track_number, entry, locale, internal_signature, 
+		       customer_id, delivery_service, shardkey, sm_id, date_created, oof_shard
+			FROM orders
+		`
+	rows, err := r.pool.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var orders []models.Order
+	for rows.Next() {
+		var order models.Order
+		if err := rows.Scan(
+			&order.OrderUID,
+			&order.TrackNumber,
+			&order.Entry,
+			&order.Locale,
+			&order.InternalSignature,
+			&order.CustomerID,
+			&order.DeliveryService,
+			&order.ShardKey,
+			&order.SmID,
+			&order.DateCreated,
+			&order.OofShard,
+		); err != nil {
+			return nil, err
+		}
+		// Delivery
+		query = `
+			SELECT name, phone, zip, city, address, region, email
+			FROM deliveries
+			WHERE order_uid = $1
+		`
+		err = r.pool.QueryRow(ctx, query, order.OrderUID).Scan(
+			&order.Delivery.Name,
+			&order.Delivery.Phone,
+			&order.Delivery.Zip,
+			&order.Delivery.City,
+			&order.Delivery.Address,
+			&order.Delivery.Region,
+			&order.Delivery.Email,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// Payment
+		query = `
+			SELECT transaction, request_id, currency, provider, amount,
+	       			payment_dt, bank, delivery_cost, goods_total, custom_fee
+			FROM payments
+			WHERE order_uid = $1
+		`
+		err = r.pool.QueryRow(ctx, query, order.OrderUID).Scan(
+			&order.Payment.Transaction,
+			&order.Payment.RequestID,
+			&order.Payment.Currency,
+			&order.Payment.Provider,
+			&order.Payment.Amount,
+			&order.Payment.PaymentDt,
+			&order.Payment.Bank,
+			&order.Payment.DeliveryCost,
+			&order.Payment.GoodsTotal,
+			&order.Payment.CustomFee,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// Items
+		query = `
+			SELECT chrt_id, track_number, price, rid, name, sale, size, total_price, nm_id, brand, status
+			FROM items
+			WHERE order_uid = $1
+		`
+
+		itemRows, err := r.pool.Query(ctx, query, order.OrderUID)
+		if err != nil {
+			return nil, err
+		}
+
+		for itemRows.Next() {
+			var item models.Item
+			if err := itemRows.Scan(
+				&item.ChrtID,
+				&item.TrackNumber,
+				&item.Price,
+				&item.RID,
+				&item.Name,
+				&item.Sale,
+				&item.Size,
+				&item.TotalPrice,
+				&item.NmID,
+				&item.Brand,
+				&item.Status,
+			); err != nil {
+				itemRows.Close()
+				return nil, err
+			}
+			order.Items = append(order.Items, item)
+		}
+		itemRows.Close()
+
+		orders = append(orders, order)
+	}
+	return orders, nil
+}

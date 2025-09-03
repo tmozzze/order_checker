@@ -10,7 +10,7 @@ CREATE TABLE orders (
     delivery_service TEXT,
     shardkey TEXT,
     sm_id INT,
-    date_created TIMESTAMP,
+    date_created TIMESTAMP NOT NULL DEFAULT now(),
     oof_shard TEXT
 );
 

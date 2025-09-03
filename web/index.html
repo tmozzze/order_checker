@@ -1,24 +1,21 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="UTF-8">
   <title>Order Checker</title>
-  <style>
-    body { font-family: Arial, sans-serif; padding: 20px; }
-    input, button { padding: 8px; font-size: 14px; margin: 5px; }
-    pre { background: #f0f0f0; padding: 10px; }
-  </style>
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <h1>Order Checker</h1>
 
-  <label for="orderId">Order UID:</label>
-  <input type="text" id="orderId" placeholder="Введите order_uid">
-  <button id="searchBtn">Поиск</button>
+  <div class="section">
+    <label for="orderId">Order UID:</label>
+    <input type="text" id="orderId" placeholder="Введите order_uid">
+    <button id="searchBtn">Поиск</button>
+  </div>
 
-  <h2>Результат:</h2>
-  <pre id="result">Здесь будет информация о заказе...</pre>
+  <div id="result">Здесь будет информация о заказе...</div>
 
-  <script src="/static/script.js"></script>
+  <script src="/script.js"></script>
 </body>
 </html>

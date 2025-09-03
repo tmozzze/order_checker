@@ -68,9 +68,14 @@ func (c *Consumer) Start(ctx context.Context) error {
 			continue
 		}
 
+		if err := order.Validate(); err != nil {
+			log.Printf("Invalid order data: %v", err)
+			continue
+		}
+
 		// Saving to postgres
 		if err := c.repo.SaveOrder(ctx, &order); err != nil {
-			log.Printf("failed to save order: %v", err)
+			log.Printf("failed to save order %s: %v", order.OrderUID, err)
 			continue
 		}
 
